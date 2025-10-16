@@ -3,9 +3,9 @@ from dataclasses import dataclass
 
 @dataclass
 class FundData:
-    ticker: str
-    name: str
-    morningstarId: str
+    BloombergTicker: str
+    FundName: str
+    MorningstarId: str
     ISIN: str
 
-
+#
