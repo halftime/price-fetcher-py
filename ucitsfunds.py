@@ -58,4 +58,6 @@ class UCITSFunds:
         
             
 
-UCITS_FUNDS = UCITSFunds.example()
+
+
+UCITS_FUNDS = [f for f in UCITSFunds.example().__dict__.values()]
