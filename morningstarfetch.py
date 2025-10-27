@@ -10,6 +10,8 @@ from pricerecord import PriceRecord
 import httpx
 import asyncio
 
+client = httpx.AsyncClient()
+
 async def collect_morningstar_maasToken(tickerQuery:str="0P0001I3S0") -> str: # just collecting the token
     url = f"https://global.morningstar.com/en-gb/investments/etfs/{tickerQuery}/chart"
     headers = {
@@ -20,8 +22,7 @@ async def collect_morningstar_maasToken(tickerQuery:str="0P0001I3S0") -> str: # 
         "x-api-requestid": str(uuid.uuid4())
     }
 
-    async with httpx.AsyncClient() as reqSession:
-        response = await reqSession.get(url, headers=headers)
+    response = await client.get(url, headers=headers)
 
     json_data = str(response.text)
     if 'maasToken:"' in json_data:
@@ -32,7 +33,7 @@ async def collect_morningstar_maasToken(tickerQuery:str="0P0001I3S0") -> str: # 
     raise Exception("Failed to fetch data")
 
 
-async def fetch_morningstar_history(tickerQuery:str, maasBearerToken:str, startDate:str="1900-01-01", endDate:str=date.today().isoformat()) -> list[MorningStarSeries]:
+async def fetch_morningstar_history(tickerQuery:str, maasBearerToken:str, startDate:date, endDate:date=date.today()) -> list[MorningStarSeries]:
     url = f"https://www.us-api.morningstar.com/QS-markets/chartservice/v2/timeseries?query={tickerQuery}:totalReturn,nav,open,high,low,close,volume,previousClose"
     url += "&frequency=d" # frequency = 1/d : daily, m : monthly
     url += f"&startDate={startDate}&endDate={endDate}"
@@ -44,11 +45,11 @@ async def fetch_morningstar_history(tickerQuery:str, maasBearerToken:str, startD
         "Authorization": f"Bearer {maasBearerToken}",
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
+    response = await client.get(url, headers=headers)
 
     if response.status_code == 200:
-        return [MorningStarSeries(**item) for item in response.json()[0]["series"]]
+        series = [MorningStarSeries(**item) for item in response.json()[0]["series"]]
+        return sorted(series, key=lambda x: x.date, reverse=False) # sort by date ascending, oldest first
     return []
 
 
@@ -59,7 +60,15 @@ async def mainasync():
 
     for f in UCITS_FUNDS:
         await api.add_fund(f)
-        series = await fetch_morningstar_history(f.morningStarId, maas_token)
+
+        fetch_start_date : date = date(1900, 1, 1)
+
+        existing_pricerecs : list[PriceRecord] = await api.get_sorted_pricerecs(f.bloombergTicker)
+        if existing_pricerecs:
+            print (f"{f.bloombergTicker} ; existing price records found: ", len(existing_pricerecs), "; latest date:", existing_pricerecs[-1].date)
+            fetch_start_date : date = existing_pricerecs[-1].date
+        series = await fetch_morningstar_history(f.morningStarId, maas_token, startDate=fetch_start_date)
+
         pricerecords : list[PriceRecord] = []
 
         for s in series:
@@ -74,10 +83,15 @@ async def mainasync():
                 nav=s.nav or 0
             ))
 
-        print("Executing asyncio tasks: ", len(pricerecords))
-        tasklist = [asyncio.create_task(api.add_price_record(pr)) for pr in pricerecords]
-        await asyncio.gather(*tasklist, return_exceptions=True)
-
+        print(f"{f.bloombergTicker} ; price records fetched: ", len(pricerecords))
+        for pr in pricerecords:
+            httpx_response : httpx.Response = await api.add_price_record(pr)
+            if (httpx_response.status_code == 201):
+                print(f"Added price record for {f.bloombergTicker} on {pr.date}")
+            elif (httpx_response.status_code == 409):
+                print(f"Price record for {f.bloombergTicker} on {pr.date} already exists")
+            else:
+                print(f"Failed to add price record for {f.bloombergTicker} on {pr.date}: {httpx_response.status_code} - {httpx_response.content}")
 
 if __name__ == "__main__":
     asyncio.run(mainasync())

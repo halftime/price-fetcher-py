@@ -27,21 +27,30 @@ class MyWebApi:
         else:
             print(f"Error, returned: {response.status_code}; failed: {response.content}")
 
-    async def add_price_record(self, pricerecord: PriceRecord) -> bool:
+    async def get_sorted_pricerecs(self, bloomberg_ticker: str) -> list[PriceRecord]:
+        print(f"Getting price records for ticker: {bloomberg_ticker}")
+
+        response = await self.client.get(f"{self.main_api_url}/prices/{bloomberg_ticker}")
+
+        if response.status_code == 200:
+            pricerecords_info = response.json()
+            print(f"Price records retrieved successfully: {pricerecords_info}")
+            sorted_records = sorted([PriceRecord(**pr) for pr in pricerecords_info], key=lambda x: x.date) # sort by date ascending, oldest first
+            return sorted_records
+        else:
+            print(f"Error, returned: {response.status_code}; failed: {response.content}")
+            return []
+
+    async def add_price_record(self, pricerecord: PriceRecord) -> httpx.Response:
         print(f"Adding price record: {pricerecord}")
 
         response = await self.client.post(
             url=f"{self.main_api_url}/addpricerecord",
             json=pricerecord.__dict__
         )
+        print(">> http Response status code:", response.status_code)
+        return response
 
-        if response.status_code == 201:
-            #print("Price record added successfully.")
-            return True
-        else:
-            #print(f"Error, returned: {response.status_code}; failed: {response.content}")
-            return False
-    
 
     async def get_fund(self, bloomberg_ticker: str) -> FundInfo | None:
         print(f"Getting fund data for ticker: {bloomberg_ticker}")
@@ -61,7 +70,7 @@ class MyWebApi:
     async def get_price_record(self, boomberg_ticker:str, date:date):
         print(f"Getting price record for ticker: {boomberg_ticker} on date: {date}")
 
-        response = await self.client.get(f"{self.main_api_url}/prices/{boomberg_ticker}/{date.isoformat()}")
+        response = await self.client.get(f"{self.main_api_url}/pricerecord/{boomberg_ticker}/{date.isoformat()}")
 
         if response.status_code == 200:
             pricerecord_info = response.json()
