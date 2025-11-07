@@ -9,10 +9,10 @@ import json
 import httpx
 import asyncio
 
-class MyWebApi:
-    def __init__(self, main_api_url: str = "http://localhost:8080"):
-        self.main_api_url = main_api_url
+class MyWebApi: # http://192.168.0.224:8080 # http://ignc.dev:8080 , returns not local denied
+    def __init__(self, main_api_url: str = "http://192.168.0.224:8080"):
         self.client = httpx.AsyncClient()
+        self.main_api_url = main_api_url
 
     async def add_fund(self, fund_data: FundInfo):
         print(f"Adding fund data: {fund_data}")
