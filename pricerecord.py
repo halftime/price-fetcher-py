@@ -18,3 +18,5 @@ class PriceRecord:
     low: float
     nav: float
     volume: int
+    nonzeroprice: Optional[float] = None # derived
+    
