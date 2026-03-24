@@ -25,26 +25,15 @@ def _coerce_to_date(value) -> date | None:
 async def mainasync():
     cache.init_schema()
     ms_client = MorningstarClient()
-    maas_token: str | None = None
+    for f in UCITS_FUNDS:
+        latest_cached_date = cache.get_latest_cached_date(f.bloombergTicker)
+        fetch_start_date = latest_cached_date or date(1900, 1, 1)
+        if latest_cached_date:
+            print(f"{f.bloombergTicker} ; local cache latest date: {latest_cached_date}")
 
-    try:
-        maas_token = await ms_client.collect_maas_token()
-        print ("Fetched maas bearer token:", maas_token)
-    except Exception as ex:
-        print(f"Morningstar unavailable, skipping fetch phase: {ex}")
-
-    if maas_token:
-        for f in UCITS_FUNDS:
-            latest_cached_date = cache.get_latest_cached_date(f.bloombergTicker)
-            fetch_start_date = latest_cached_date or date(1900, 1, 1)
-            if latest_cached_date:
-                print(f"{f.bloombergTicker} ; local cache latest date: {latest_cached_date}")
-
-            series = await ms_client.fetch_history(f.morningStarId, maas_token, start_date=fetch_start_date)
-            inserted_rows = cache.save_series(f.bloombergTicker, f.morningStarId, f.fundId, series)
-            print(f"{f.bloombergTicker} ; stored/updated rows in local cache: {inserted_rows}")
-    else:
-        print("Using existing local cache only (no Morningstar updates this run).")
+        series = await ms_client.fetch_history(f.morningStarId, start_date=fetch_start_date)
+        inserted_rows = cache.save_series(f.bloombergTicker, f.morningStarId, f.fundId, series)
+        print(f"{f.bloombergTicker} ; stored/updated rows in local cache: {inserted_rows}")
 
     api = MyWebApi()
 
