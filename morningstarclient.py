@@ -177,22 +177,12 @@ class MorningstarClient:
         for history_date in sorted(set(price_history) | set(nav_history)):
             close_value = price_history.get(history_date)
             nav_value = nav_history.get(history_date)
-            if close_value is None:
-                close_value = nav_value
-            if nav_value is None:
-                nav_value = close_value
-            if close_value is None:
-                continue
 
             # The legacy public endpoint exposes close-like PRICE and NAV, but not OHLCV.
             series.append(
                 MorningStarSeries(
                     date=history_date,
-                    open=close_value,
-                    high=close_value,
-                    low=close_value,
                     close=close_value,
-                    volume=0,
                     nav=nav_value,
                 )
             )

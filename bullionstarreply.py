@@ -1,5 +1,3 @@
-
-from dataclasses import dataclass
 from datetime import date, datetime
 
 class BullionStarReply:
@@ -45,5 +43,10 @@ class BullionStarReply:
         assert isinstance(self.endDate, date), "endDate is not a date"
         assert self.startDate.strftime("%d-%m-%Y") == self.startDateString, "startDateString does not match startDate"
         assert self.endDate.strftime("%d-%m-%Y") == self.endDateString, "endDateString does not match endDate"
+
+    def __repr__(self) -> str:
+        return f"BullionStarReply({self.__dict__!r})"
+
+    __str__ = __repr__
 
 

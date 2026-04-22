@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pricerecord import PriceRecord
+from pricerecord import MinimalPriceRecord
 from seriesdata import MorningStarSeries
 from sqlalchemy import Date, Float, Integer, String, UniqueConstraint, create_engine, select
 from sqlalchemy.dialects.sqlite import insert
@@ -104,32 +104,22 @@ class MorningstarCache:
 
         return latest_row
 
-    def load_cached_pricerecords(self, bloomberg_ticker: str, fund_id: int) -> list[PriceRecord]:
+    def load_cached_pricerecords(self, bloomberg_ticker: str, fund_id: int) -> list[MinimalPriceRecord]:
         with Session(self.engine) as session:
             rows = session.execute(
                 select(
                     LocalMorningstarPrice.price_date,
-                    LocalMorningstarPrice.open,
-                    LocalMorningstarPrice.high,
-                    LocalMorningstarPrice.low,
                     LocalMorningstarPrice.close,
-                    LocalMorningstarPrice.volume,
-                    LocalMorningstarPrice.nav,
                 )
                 .where(LocalMorningstarPrice.bloomberg_ticker == bloomberg_ticker)
                 .order_by(LocalMorningstarPrice.price_date.asc())
             ).all()
 
         return [
-            PriceRecord(
-                fundId=fund_id,
+            MinimalPriceRecord(
+                investmentId=fund_id,
                 date=row[0],
-                open=float(row[1]),
-                high=float(row[2]),
-                low=float(row[3]),
-                close=float(row[4]),
-                volume=int(row[5]),
-                nav=float(row[6]),
+                price=float(row[1]),
             )
             for row in rows
         ]

@@ -1,8 +1,8 @@
 
-from funddata import FundInfo
+from funddata import FundInfo, PreciousMetal
 from requests import request
 from seriesdata import MorningStarSeries
-from pricerecord import PriceRecord
+from pricerecord import MinimalPriceRecord
 from ucitsfunds import UCITS_FUNDS
 from datetime import date, datetime
 import json
@@ -13,7 +13,7 @@ from typing import Any
 class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns not local denied
     def __init__(
         self,
-        main_api_url: str = "http://192.168.129.222:8080",
+        main_api_url: str = "http://localhost:8080",
         timeout_seconds: float = 10.0,
         max_retries: int = 2,
         retry_delay_seconds: float = 0.75,
@@ -85,7 +85,50 @@ class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns n
         else:
             print(f"Error, returned: {response.status_code}; failed: {response.content}")
 
-    async def get_sorted_pricerecs(self, bloomberg_ticker: str) -> list[PriceRecord]:
+    async def add_precious_metal(self, metal_data: PreciousMetal) -> PreciousMetal | None:
+        print(f"Adding precious metal: {metal_data}")
+
+        response = await self._request("POST", "/addmetal", json=metal_data.__dict__)
+
+        if response is None:
+            print("Error adding precious metal: request failed after retries.")
+            return None
+
+        if response.status_code == 201:
+            print("Precious metal added successfully.")
+            body = response.json()
+            if "id" in body and "Id" not in body:
+                body["Id"] = body.pop("id")
+            return PreciousMetal(**body)
+        
+        elif response.status_code == 409:
+            print("Precious metal already exists, fetching from API.")
+            return await self.get_investment_byticker(str(metal_data.symbol))
+        else:
+            print(f"Error, returned: {response.status_code}; failed: {response.content}")
+            return None
+
+
+    async def get_investment_byticker(self, ticker: str) -> PreciousMetal | None:
+        print(f"Getting metal data for ticker: {ticker}")
+
+        response = await self._request("GET", f"/investment/{ticker}")
+
+        if response is None:
+            print("Error retrieving metal: request failed after retries.")
+            return None
+
+        if response.status_code == 200:
+            body = response.json()
+            print(f"Metal data retrieved successfully: {body}")
+            if "id" in body and "Id" not in body:
+                body["Id"] = body.pop("id")
+            return PreciousMetal(**body)
+        else:
+            print(f"Error, returned: {response.status_code}; failed: {response.content}")
+            return None
+
+    async def get_sorted_pricerecs(self, bloomberg_ticker: str) -> list[MinimalPriceRecord]:
         print(f"Getting price records for ticker: {bloomberg_ticker}")
 
         response = await self._request("GET", f"/prices/{bloomberg_ticker}")
@@ -97,18 +140,18 @@ class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns n
         if response.status_code == 200:
             pricerecords_info = response.json()
             print(f"Price records retrieved successfully: {pricerecords_info}")
-            parsed_records: list[PriceRecord] = []
+            parsed_records: list[MinimalPriceRecord] = []
             for pr in pricerecords_info:
                 payload = dict(pr)
                 payload["date"] = self._to_date(payload["date"])
-                parsed_records.append(PriceRecord(**payload))
+                parsed_records.append(MinimalPriceRecord(**payload))
             sorted_records = sorted(parsed_records, key=lambda x: x.date) # sort by date ascending, oldest first
             return sorted_records
         else:
             print(f"Error, returned: {response.status_code}; failed: {response.content}")
             return []
 
-    async def add_price_record(self, pricerecord: PriceRecord) -> httpx.Response:
+    async def add_price_record(self, pricerecord: MinimalPriceRecord) -> httpx.Response:
         print(f"Adding price record: {pricerecord}")
 
         response = await self._request("POST", "/addpricerecord", json=pricerecord.__dict__)
@@ -154,7 +197,7 @@ class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns n
             print(f"Price record retrieved successfully: {pricerecord_info}")
             payload = dict(pricerecord_info)
             payload["date"] = self._to_date(payload["date"])
-            return PriceRecord(**payload)
+            return MinimalPriceRecord(**payload)
         else:
             print(f"Error, returned: {response.status_code}; failed: {response}")
             return None
