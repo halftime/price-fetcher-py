@@ -97,9 +97,7 @@ class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns n
         if response.status_code == 201:
             print("Precious metal added successfully.")
             body = response.json()
-            if "id" in body and "Id" not in body:
-                body["Id"] = body.pop("id")
-            return PreciousMetal(**body)
+            return  
         
         elif response.status_code == 409:
             print("Precious metal already exists, fetching from API.")
@@ -121,8 +119,6 @@ class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns n
         if response.status_code == 200:
             body = response.json()
             print(f"Metal data retrieved successfully: {body}")
-            if "id" in body and "Id" not in body:
-                body["Id"] = body.pop("id")
             return PreciousMetal(**body)
         else:
             print(f"Error, returned: {response.status_code}; failed: {response.content}")
