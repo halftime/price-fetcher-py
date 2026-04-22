@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from funddata import PreciousMetal
+from fund import PreciousMetal
 
 
 @pytest.fixture

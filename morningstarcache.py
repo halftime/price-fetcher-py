@@ -117,7 +117,7 @@ class MorningstarCache:
 
         return [
             MinimalPriceRecord(
-                investmentId=fund_id,
+                symbol=bloomberg_ticker,
                 date=row[0],
                 price=float(row[1]),
             )

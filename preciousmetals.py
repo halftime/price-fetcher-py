@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from funddata import PreciousMetal
+from fund import PreciousMetal
 
 
 @dataclass

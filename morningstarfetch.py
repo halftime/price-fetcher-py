@@ -47,7 +47,7 @@ async def morningstarasync():
                 print(f"{f.symbol} ; local cache latest date: {latest_cached_date}")
 
             series = await ms_client.fetch_history(f.morningStarId, start_date=fetch_start_date)
-            initial_fund_id = f.Id if f.Id is not None else 0
+            initial_fund_id = f.id if f.id is not None else 0
             inserted_rows = cache.save_series(f.symbol, f.morningStarId, initial_fund_id, series)
             print(f"{f.symbol} ; stored/updated rows in local cache: {inserted_rows}")
 
@@ -55,8 +55,8 @@ async def morningstarasync():
         try:
             for f in UCITS_FUNDS:
                 await api.add_fund(f)
-                db_fund = await api.get_fund(f.symbol)
-                fund_id = db_fund.Id if (db_fund is not None and db_fund.Id is not None) else f.Id
+                db_fund = await api.get_investment(f.symbol)
+                fund_id = db_fund.id if (db_fund is not None and db_fund.id is not None) else f.id
                 if fund_id is None:
                     print(f"{f.symbol} ; no fund id available after add_fund, skipping price sync")
                     continue

@@ -3,12 +3,12 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Investment:
-    Id: int | None = None
+    id: int | None = None
     symbol: str = ""
     name : str = ""
 
     def __post_init__(self):
-        if self.Id is not None and (not isinstance(self.Id, int) or self.Id <= 0):
+        if self.id is not None and (not isinstance(self.id, int) or self.id <= 0):
             raise ValueError("Id must be a positive integer")
         if not self.symbol:
             raise ValueError("Symbol cannot be empty")
@@ -37,13 +37,14 @@ class PreciousMetal(Investment):
 
 @dataclass
 class FundInfo(Investment):
+
     morningStarId: str = ""
-    iSIN: str = ""
+    isin: str = ""  # Accept API field 'isin' as alias for 'iSIN'
 
     def __post_init__(self):
         super().__post_init__()
 
         if not self.morningStarId:
             raise ValueError("morningStarId cannot be empty")
-        if not self.iSIN:
-            raise ValueError("iSIN cannot be empty")
+        if not self.isin:
+            raise ValueError("isin cannot be empty")

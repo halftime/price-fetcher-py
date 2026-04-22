@@ -1,3 +1,4 @@
+# File renamed to test_prices.py
 import httpx
 import pytest
 
@@ -22,8 +23,8 @@ def test_get_prices_vwce_records_have_required_fields(base_url):
     records = response.json()
     for record in records:
         assert "date" in record, f"Record missing 'date': {record}"
+        assert "symbol" in record, f"Record missing 'symbol': {record}"
         assert "price" in record, f"Record missing 'price': {record}"
-        assert "investmentId" in record, f"Record missing 'investmentId': {record}"
 
 
 def test_get_prices_unknown_ticker_returns_404(base_url):

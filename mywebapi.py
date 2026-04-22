@@ -1,5 +1,5 @@
 
-from funddata import FundInfo, PreciousMetal
+from fund import FundInfo, PreciousMetal
 from requests import request
 from seriesdata import MorningStarSeries
 from pricerecord import MinimalPriceRecord
@@ -164,10 +164,10 @@ class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns n
         return response
 
 
-    async def get_fund(self, bloomberg_ticker: str) -> FundInfo | None:
+    async def get_investment(self, bloomberg_ticker: str) -> FundInfo | None:
         print(f"Getting fund data for ticker: {bloomberg_ticker}")
 
-        response = await self._request("GET", f"/funds/{bloomberg_ticker}")
+        response = await self._request("GET", f"/investment/{bloomberg_ticker}")
 
         if response is None:
             print("Error retrieving fund: request failed after retries.")
@@ -217,7 +217,7 @@ async def mainasync():
             print(f"Added {fund}")
 
 
-    test_response = await api.get_fund("V3AA")
+    test_response = await api.get_investment("V3AA")
     print("fetched response:", test_response)
     # fetched response: {'id': 2, 'bloombergTicker': 'V3AA', 'fundName': 'Vanguard ESG Global All Cap UCITS Acc', 'morningStarId': 'F000016OZH', 'isin': 'IE00BNG8L278', 'priceRecords': []}
     await api.close()

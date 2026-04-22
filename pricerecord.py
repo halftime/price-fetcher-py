@@ -22,6 +22,8 @@ from typing import Optional
 
 @dataclass
 class MinimalPriceRecord:
-    investmentId: int
+    #investmentId: int
+    symbol: str
     price: float
     date: date
+    dateString: str | None = None
