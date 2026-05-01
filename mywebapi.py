@@ -13,7 +13,7 @@ from typing import Any
 class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns not local denied
     def __init__(
         self,
-        main_api_url: str = "http://localhost:8080",
+        main_api_url: str = "http://192.168.129.222:8080",
         timeout_seconds: float = 10.0,
         max_retries: int = 2,
         retry_delay_seconds: float = 0.75,
@@ -77,7 +77,7 @@ class MyWebApi: # http://192.168.129.222:8080 # http://ignc.dev:8080 , returns n
         response = await self._request("POST", "/addfund", json=fund_data.__dict__)
 
         if response is None:
-            print("Error adding fund: request failed after retries.")
+            print("Error adding fund: request failed after retries. msg: ")
             return
 
         if response.status_code == 201:

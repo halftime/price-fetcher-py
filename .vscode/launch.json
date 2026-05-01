@@ -8,7 +8,7 @@
             "module": "pytest",
             "args": [
                 "tests/",
-                "--base-url", "http://localhost:8080",
+                "--base-url", "http://192.168.129.222:8080",
                 "-v"
             ],
             "console": "integratedTerminal",

@@ -4,7 +4,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-BASE_URL = "http://localhost:8080"
+BASE_URL = "http://localhost:8080"  # Default base URL for the API under test
 
 
 def pytest_addoption(parser):

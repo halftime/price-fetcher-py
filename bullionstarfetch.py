@@ -64,12 +64,16 @@ async def main():
     try:
         for metal in PRECIOUS_METALS_LIST:
             results = await fetch_bullionstar_spot_price(fromIndex=metal.symbol)
-            added_metal = await api.add_precious_metal(metal)
-            investment_id = added_metal.id if (added_metal is not None and added_metal.id is not None) else metal.id
-            if investment_id is None:
-                _log(metal.symbol, "No investment id available, skipping price record sync")
-                continue
-            for record_date, price in results.items():
+
+            await api.add_precious_metal(metal)
+            api_existing_pricerecs: list[MinimalPriceRecord] = await api.get_sorted_pricerecs(metal.symbol)
+            latest_api_date = api_existing_pricerecs[-1].date if api_existing_pricerecs else None
+            if latest_api_date:
+                _log(metal.symbol, f"API latest date: {latest_api_date}")
+
+            for record_date, price in sorted(results.items()):
+                if latest_api_date is not None and record_date <= latest_api_date:
+                    continue
                 pr = MinimalPriceRecord(symbol=metal.symbol, price=price, date=record_date)
                 await api.add_price_record(pr)
     finally:

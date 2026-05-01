@@ -2,13 +2,9 @@ from datetime import date
 from ucitsfunds import UCITS_FUNDS
 from mywebapi import MyWebApi
 from pricerecord import MinimalPriceRecord
-from morningstarcache import MorningstarCache
 from morningstarclient import MorningstarClient
 import httpx
 import asyncio
-
-cache = MorningstarCache()
-cache.init_schema()
 
 
 def _coerce_to_date(value) -> date | None:
@@ -40,33 +36,23 @@ async def _sync_price_records_to_api(
 async def morningstarasync():
     ms_client = MorningstarClient()
     try:
-        for f in UCITS_FUNDS:
-            latest_cached_date = cache.get_latest_cached_date(f.symbol)
-            fetch_start_date = latest_cached_date or date(1900, 1, 1)
-            if latest_cached_date:
-                print(f"{f.symbol} ; local cache latest date: {latest_cached_date}")
-
-            series = await ms_client.fetch_history(f.morningStarId, start_date=fetch_start_date)
-            initial_fund_id = f.id if f.id is not None else 0
-            inserted_rows = cache.save_series(f.symbol, f.morningStarId, initial_fund_id, series)
-            print(f"{f.symbol} ; stored/updated rows in local cache: {inserted_rows}")
-
         api = MyWebApi()
         try:
             for f in UCITS_FUNDS:
                 await api.add_fund(f)
-                db_fund = await api.get_investment(f.symbol)
-                fund_id = db_fund.id if (db_fund is not None and db_fund.id is not None) else f.id
-                if fund_id is None:
-                    print(f"{f.symbol} ; no fund id available after add_fund, skipping price sync")
-                    continue
-
                 api_existing_pricerecs: list[MinimalPriceRecord] = await api.get_sorted_pricerecs(f.symbol)
                 latest_api_date = _coerce_to_date(api_existing_pricerecs[-1].date) if api_existing_pricerecs else None
                 if latest_api_date:
                     print(f"{f.symbol} ; API latest date: {latest_api_date}")
 
-                cached_pricerecords = cache.load_cached_pricerecords(f.symbol, fund_id)
+                fetch_start_date = latest_api_date or date(1900, 1, 1)
+                source_series = await ms_client.fetch_history(f.morningStarId, start_date=fetch_start_date)
+
+                cached_pricerecords = [
+                    MinimalPriceRecord(symbol=f.symbol, price=s.close, date=s.date)
+                    for s in source_series
+                    if s.close is not None
+                ]
                 if latest_api_date:
                     cached_pricerecords = [pr for pr in cached_pricerecords if pr.date > latest_api_date]
 
@@ -77,5 +63,5 @@ async def morningstarasync():
         await ms_client.close()
 
 if __name__ == "__main__":
-    input("Enter to start Morningstar fetch and API sync...")
+    #input("Enter to start Morningstar fetch and API sync...")
     asyncio.run(morningstarasync())
