@@ -46,7 +46,10 @@ async def morningstarasync():
                     print(f"{f.symbol} ; API latest date: {latest_api_date}")
 
                 fetch_start_date = latest_api_date or date(1900, 1, 1)
-                source_series = await ms_client.fetch_history(f.morningStarId, start_date=fetch_start_date)
+                source_series = await ms_client.fetch_history(
+                    f.morningStarId,
+                    start_date=fetch_start_date,
+                )
 
                 cached_pricerecords = [
                     MinimalPriceRecord(symbol=f.symbol, price=s.close, date=s.date)

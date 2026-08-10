@@ -1,5 +1,4 @@
 import asyncio
-import uuid
 from datetime import date
 
 import httpx
@@ -10,6 +9,10 @@ from seriesdata import MorningStarSeries
 class MorningstarClient:
     PUBLIC_REST_BASE_URL = "https://tools.morningstar.co.uk/api/rest.svc"
     PUBLIC_REST_API_KEY = "t92wz0sj7c"
+    CHART_SERVICE_URL = "https://www.us-api.morningstar.com/QS-markets/chartservice/v2/timeseries"
+    CHART_SERVICE_FIELDS = "open,high,low,close,volume,previousClose"
+    CHART_TOKEN_PAGE_URL = "https://www.morningstar.com/funds/xnas/afozx/chart"
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     PRICE_CURRENCY_BY_SECURITY_ID = {
         # These UCITS ETFs expose listed market prices in USD on the legacy REST endpoint.
         "F000016OZH": "USD",
@@ -21,6 +24,7 @@ class MorningstarClient:
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds), follow_redirects=True)
         self.retries = retries
         self.base_delay = base_delay
+        self._maas_token: str | None = None
 
     async def close(self):
         await self.client.aclose()
@@ -42,8 +46,12 @@ class MorningstarClient:
         for attempt in range(self.retries + 1):
             try:
                 response = await self.client.get(url, headers=headers, params=params)
-                if self._is_cloudfront_error(response.status_code, response.text):
-                    print(f"CloudFront blocked request (attempt {attempt + 1}/{self.retries + 1}) for URL: {url}")
+                is_waf_challenge = (
+                    response.status_code == 202
+                    and response.headers.get("x-amzn-waf-action") == "challenge"
+                )
+                if is_waf_challenge or self._is_cloudfront_error(response.status_code, response.text):
+                    print(f"Morningstar blocked request (attempt {attempt + 1}/{self.retries + 1}) for URL: {url}")
                     if attempt < self.retries:
                         await asyncio.sleep(self.base_delay * (attempt + 1))
                         continue
@@ -60,32 +68,35 @@ class MorningstarClient:
         return None
 
     async def collect_maas_token(self, ticker_query: str = "0P0001I3S0") -> str:
-        url = f"https://global.morningstar.com/en-gb/investments/etfs/{ticker_query}/chart"
+        # The token is not security-specific. Keep ticker_query for compatibility with callers.
+        del ticker_query
+        if self._maas_token:
+            return self._maas_token
+
         headers = {
-            "Accept": "application/json",
-            "Accept-Language": "en-GB,en;q=0.9",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-            "Origin": "https://global.morningstar.com",
-            "Referer": f"https://global.morningstar.com/en-gb/investments/etfs/{ticker_query}/chart",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 OPR/122.0.0.0",
-            "x-api-requestid": str(uuid.uuid4()),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.morningstar.com/",
+            "User-Agent": self.USER_AGENT,
         }
 
-        response = await self._get_with_retry(url, headers)
+        response = await self._get_with_retry(self.CHART_TOKEN_PAGE_URL, headers)
         if response is None:
-            raise Exception("Failed to fetch Morningstar page after retries")
+            raise Exception("Failed to fetch the Morningstar token page after retries")
         if self._is_cloudfront_error(response.status_code, response.text):
-            raise Exception("Morningstar returned a CloudFront block page while collecting maasToken")
+            raise Exception("Morningstar returned a CloudFront block page while collecting the chart token")
+        if response.status_code != 200:
+            raise Exception(f"Morningstar token page returned HTTP {response.status_code}")
 
-        html = str(response.text)
-        if 'maasToken:"' in html:
-            try:
-                return html.split('maasToken:"')[1].split('"')[0]
-            except Exception as ex:
-                raise Exception("maasToken was not found in the response") from ex
+        token_marker = 'token:"'
+        _, marker, token_and_html = response.text.partition(token_marker)
+        if marker:
+            token, separator, _ = token_and_html.partition('"')
+            if separator and token:
+                self._maas_token = token
+                return token
 
-        raise Exception("Failed to fetch data")
+        raise Exception("Morningstar chart token was not found in the token page")
 
     @classmethod
     def _get_price_currency_id(cls, security_id: str) -> str:
@@ -149,12 +160,85 @@ class MorningstarClient:
 
         return parsed_history
 
-    async def fetch_history(
+    async def fetch_chart_history(
+        self,
+        morningstar_id: str,
+        start_date: date,
+        end_date: date | None = None,
+    ) -> list[MorningStarSeries]:
+        """Fetch monthly OHLCV history from Morningstar's chart service."""
+        end_date = end_date or date.today()
+
+        try:
+            maas_token = await self.collect_maas_token(morningstar_id)
+        except Exception as ex:
+            print(f"Failed to collect a Morningstar token for {morningstar_id}: {ex}")
+            return []
+
+        headers = {
+            "Accept": "application/json",
+            "Accept-Language": "en-GB,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Origin": "https://global.morningstar.com",
+            "Referer": "https://global.morningstar.com/",
+            "User-Agent": self.USER_AGENT,
+            "Authorization": f"Bearer {maas_token}",
+        }
+        params = {
+            "query": f"{morningstar_id}:{self.CHART_SERVICE_FIELDS}",
+            "frequency": "m",
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "trackMarketData": "3.6.5",
+            "instid": "DOTCOM",
+        }
+
+        response = await self._get_with_retry(self.CHART_SERVICE_URL, headers=headers, params=params)
+        if response is None:
+            print(f"Failed to fetch chart history for {morningstar_id}: request failed after retries")
+            return []
+
+        if response.status_code != 200:
+            print(f"Failed to fetch chart history for {morningstar_id}: HTTP {response.status_code}")
+            return []
+
+        try:
+            history_items = response.json()[0]["series"]
+        except (ValueError, KeyError, IndexError, TypeError) as ex:
+            print(f"Failed to parse chart history for {morningstar_id}: {ex}")
+            return []
+
+        series: list[MorningStarSeries] = []
+        for item in history_items:
+            try:
+                raw_date = item["date"]
+                history_date = raw_date if isinstance(raw_date, date) else date.fromisoformat(raw_date.split("T", 1)[0])
+                series.append(
+                    MorningStarSeries(
+                        date=history_date,
+                        open=item.get("open"),
+                        high=item.get("high"),
+                        low=item.get("low"),
+                        close=item.get("close"),
+                        volume=item.get("volume"),
+                        nav=item.get("nav"),
+                        totalReturn=item.get("totalReturn"),
+                        previousClose=item.get("previousClose"),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        return sorted(series, key=lambda item: item.date)
+
+    async def fetch_public_history(
         self,
         ticker_query: str,
         start_date: date,
-        end_date: date = date.today(),
+        end_date: date | None = None,
     ) -> list[MorningStarSeries]:
+        end_date = end_date or date.today()
         price_history, nav_history = await asyncio.gather(
             self._fetch_public_timeseries(
                 ticker_query,
@@ -188,3 +272,15 @@ class MorningstarClient:
             )
 
         return series
+
+    async def fetch_history(
+        self,
+        morningstar_id: str,
+        start_date: date,
+        end_date: date | None = None,
+    ) -> list[MorningStarSeries]:
+        return await self.fetch_chart_history(
+            morningstar_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
