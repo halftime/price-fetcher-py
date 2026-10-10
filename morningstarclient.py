@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import date
 
 import httpx
@@ -6,8 +7,12 @@ import httpx
 from seriesdata import MorningStarSeries
 
 
+class MorningstarFetchError(RuntimeError):
+    pass
+
+
 class MorningstarClient:
-    PUBLIC_REST_BASE_URL = "https://tools.morningstar.co.uk/api/rest.svc"
+    PUBLIC_REST_BASE_URL = "https://lt.morningstar.com/api/rest.svc"
     PUBLIC_REST_API_KEY = "t92wz0sj7c"
     CHART_SERVICE_URL = "https://www.us-api.morningstar.com/QS-markets/chartservice/v2/timeseries"
     CHART_SERVICE_FIELDS = "open,high,low,close,volume,previousClose"
@@ -88,13 +93,16 @@ class MorningstarClient:
         if response.status_code != 200:
             raise Exception(f"Morningstar token page returned HTTP {response.status_code}")
 
-        token_marker = 'token:"'
-        _, marker, token_and_html = response.text.partition(token_marker)
-        if marker:
-            token, separator, _ = token_and_html.partition('"')
-            if separator and token:
-                self._maas_token = token
-                return token
+        # Current pages use maasToken; older pages used token. Prefer the
+        # explicit chart token when the page also contains unrelated tokens.
+        for token_key in ("maasToken", "token"):
+            match = re.search(
+                rf"""(?<![\w$])(?:{token_key}|"{token_key}"|'{token_key}')\s*:\s*(["'])([^"'\s]+)\1""",
+                response.text,
+            )
+            if match:
+                self._maas_token = match.group(2)
+                return self._maas_token
 
         raise Exception("Morningstar chart token was not found in the token page")
 
@@ -112,17 +120,18 @@ class MorningstarClient:
         start_date: date,
         end_date: date,
         price_type: str,
+        frequency: str = "daily",
     ) -> dict[date, float]:
         url = f"{self.PUBLIC_REST_BASE_URL}/timeseries_price/{self.PUBLIC_REST_API_KEY}"
         headers = {
             "Accept": "application/json",
-            "Referer": "https://tools.morningstar.co.uk/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Referer": "https://lt.morningstar.com/",
+            "User-Agent": self.USER_AGENT,
         }
         params = {
             "currencyId": self._get_price_currency_id(security_id),
             "idtype": "Morningstar",
-            "frequency": "daily",
+            "frequency": frequency,
             "outputType": "JSON",
             "priceType": price_type,
             "startDate": start_date.isoformat(),
@@ -132,19 +141,28 @@ class MorningstarClient:
 
         response = await self._get_with_retry(url, headers=headers, params=params)
         if response is None:
-            print(f"Failed to fetch {price_type} history for {security_id}: request failed after retries")
-            return {}
+            raise MorningstarFetchError(
+                f"Failed to fetch {price_type} history for {security_id}: request failed after retries"
+            )
 
         if response.status_code != 200:
-            print(f"Failed to fetch {price_type} history for {security_id}: HTTP {response.status_code}")
-            return {}
+            raise MorningstarFetchError(
+                f"Failed to fetch {price_type} history for {security_id}: HTTP {response.status_code}"
+            )
 
         try:
             payload = response.json()
-            history_items = payload["TimeSeries"]["Security"][0]["HistoryDetail"]
+            security = payload["TimeSeries"]["Security"][0]
+            if not isinstance(security, dict):
+                raise TypeError("Expected a security object")
+            # Morningstar omits HistoryDetail when the date range has no prices.
+            history_items = security.get("HistoryDetail", [])
+            if not isinstance(history_items, list) or any(not isinstance(item, dict) for item in history_items):
+                raise TypeError("Expected a list of history records")
         except (ValueError, KeyError, IndexError, TypeError) as ex:
-            print(f"Failed to parse {price_type} history for {security_id}: {ex}")
-            return {}
+            raise MorningstarFetchError(
+                f"Failed to parse {price_type} history for {security_id}: {ex}"
+            ) from ex
 
         parsed_history: dict[date, float] = {}
         for item in history_items:
@@ -155,10 +173,31 @@ class MorningstarClient:
 
             try:
                 parsed_history[date.fromisoformat(raw_date)] = float(raw_value)
-            except (TypeError, ValueError):
-                continue
+            except (TypeError, ValueError) as ex:
+                raise MorningstarFetchError(
+                    f"Failed to parse {price_type} history for {security_id}: invalid date or price value"
+                ) from ex
 
         return parsed_history
+
+    async def fetch_price_history(
+        self,
+        morningstar_id: str,
+        start_date: date,
+        end_date: date | None = None,
+    ) -> list[MorningStarSeries]:
+        """Fetch daily closing prices from the public endpoint without a chart token."""
+        price_history = await self._fetch_public_timeseries(
+            morningstar_id,
+            start_date=start_date,
+            end_date=end_date or date.today(),
+            price_type="PRICE",
+            frequency="daily",
+        )
+        return [
+            MorningStarSeries(date=history_date, close=price_history[history_date])
+            for history_date in sorted(price_history)
+        ]
 
     async def fetch_chart_history(
         self,
