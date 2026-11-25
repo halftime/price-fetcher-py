@@ -44,7 +44,7 @@ class UCITSFunds:
             volt=FundInfo(
                 symbol="VOLT",
                 name="WisdomTree Battery Solutions UCITS Acc",
-                morningStarId="F000014VZD",
+                morningStarId="0P0001JDID", #F000014VZD",
                 isin="IE00BKLF1R75"
             ),
 
